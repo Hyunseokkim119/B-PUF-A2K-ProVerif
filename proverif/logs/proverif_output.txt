@@ -1,15 +1,56 @@
-=======================================================================
-ProVerif output log for b_puf_a2k.pv
-=======================================================================
-Paste here the VERBATIM console output of:
+Process 0 (that is, the initial process):
+{1}new IDi: host;
+{2}new IDj: host;
+{3}new Bioi: bio;
+{4}new PIDi: pid;
+{5}new PIDj: pid;
+{6}new Si: bitstring;
+{7}new Cj: bitstring;
+{8}let Rj: puf_resp = PUF(IDj,Cj) in
+{9}let Kbio: bio_key = FE_Gen_K(Bioi) in
+{10}let HDbio: bitstring = FE_Gen_HD(Bioi) in
+{11}let Bi: bitstring = bxor(Si,H1(biokey2bs(Kbio))) in
+{12}out(c_pub, PIDi);
+{13}out(c_pub, PIDj);
+{14}out(c_pub, HDbio);
+(
+    {15}!
+    {16}let Kbio_prime: bio_key = FE_Rep(Bioi,HDbio) in
+    ...
+)
 
-    proverif -in pi b_puf_a2k.pv
+-- Query not attacker(SK_secret_test[])
+Completing...
+Starting query not attacker(SK_secret_test[])
+RESULT not attacker(SK_secret_test[]) is true.
 
-For a correct model the final lines read:
+-- Query inj-event(GSSAcceptsUser(u,n,sk)) ==> inj-event(UserStarts(u,n))
+Completing...
+Starting query inj-event(GSSAcceptsUser(u,n,sk)) ==> inj-event(UserStarts(u,n))
+goal reachable: end(inj-event(GSSAcceptsUser(u_1,n_1,sk_1))) ==> begin(inj-event(UserStarts(u_1,n_1)))
+RESULT inj-event(GSSAcceptsUser(u,n,sk)) ==> inj-event(UserStarts(u,n)) is true.
 
-    RESULT not attacker(SK_secret_test[]) is true.
-    RESULT inj-event(GSSAcceptsUser(u,n,sk)) ==> inj-event(UserStarts(u,n)) is true.
-    RESULT inj-event(UAVAccepts(d,n,sk)) ==> inj-event(GSSChallenges(d,n)) is true.
-    RESULT inj-event(GSS2AcceptsHandover(pjbs,sk)) ==> inj-event(GSS1IssuesTicket(pjbs,sk)) is true.
+-- Query inj-event(UAVAccepts(d,n,sk)) ==> inj-event(GSSChallenges(d,n))
+Completing...
+Starting query inj-event(UAVAccepts(d,n,sk)) ==> inj-event(GSSChallenges(d,n))
+goal reachable: end(inj-event(UAVAccepts(d_1,n_1,sk_1))) ==> begin(inj-event(GSSChallenges(d_1,n_1)))
+RESULT inj-event(UAVAccepts(d,n,sk)) ==> inj-event(GSSChallenges(d,n)) is true.
 
-[ PASTE ACTUAL ProVerif OUTPUT BELOW THIS LINE ]
+-- Query inj-event(GSS2AcceptsHandover(pjbs,sk)) ==> inj-event(GSS1IssuesTicket(pjbs,sk))
+Completing...
+Starting query inj-event(GSS2AcceptsHandover(pjbs,sk)) ==> inj-event(GSS1IssuesTicket(pjbs,sk))
+goal reachable: end(inj-event(GSS2AcceptsHandover(pjbs_1,sk_1))) ==> begin(inj-event(GSS1IssuesTicket(pjbs_1,sk_1)))
+RESULT inj-event(GSS2AcceptsHandover(pjbs,sk)) ==> inj-event(GSS1IssuesTicket(pjbs,sk)) is true.
+
+--------------------------------------------------------------
+Verification summary:
+
+Query not attacker(SK_secret_test[]) is true.
+
+Query inj-event(GSSAcceptsUser(u,n,sk)) ==> inj-event(UserStarts(u,n)) is true.
+
+Query inj-event(UAVAccepts(d,n,sk)) ==> inj-event(GSSChallenges(d,n)) is true.
+
+Query inj-event(GSS2AcceptsHandover(pjbs,sk)) ==> inj-event(GSS1IssuesTicket(pjbs,sk)) is true.
+
+--------------------------------------------------------------
