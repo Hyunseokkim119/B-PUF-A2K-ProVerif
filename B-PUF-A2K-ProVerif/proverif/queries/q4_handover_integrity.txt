@@ -1,0 +1,17 @@
+Q4 — Handover-ticket integrity: GSS2 <== GSS1
+=============================================
+Query:
+
+    query pjbs : bitstring, sk : key;
+      inj-event(GSS2AcceptsHandover(pjbs,sk)) ==> inj-event(GSS1IssuesTicket(pjbs,sk)).
+
+Meaning: whenever the target GSS accepts a handover, a matching ticket
+issuance by the serving GSS must have occurred, one-to-one. Because the
+ticket is AEAD-protected under the private K12 (adec opens only a
+ciphertext made under K12), the attacker cannot fabricate or modify a
+ticket that GSS2 will accept. Hence the active session key cannot be
+migrated by an adversary.
+
+Expected ProVerif result:
+
+    RESULT inj-event(GSS2AcceptsHandover(pjbs,sk)) ==> inj-event(GSS1IssuesTicket(pjbs,sk)) is true.

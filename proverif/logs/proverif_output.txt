@@ -1,0 +1,15 @@
+=======================================================================
+ProVerif output log for b_puf_a2k.pv
+=======================================================================
+Paste here the VERBATIM console output of:
+
+    proverif -in pi b_puf_a2k.pv
+
+For a correct model the final lines read:
+
+    RESULT not attacker(SK_secret_test[]) is true.
+    RESULT inj-event(GSSAcceptsUser(u,n,sk)) ==> inj-event(UserStarts(u,n)) is true.
+    RESULT inj-event(UAVAccepts(d,n,sk)) ==> inj-event(GSSChallenges(d,n)) is true.
+    RESULT inj-event(GSS2AcceptsHandover(pjbs,sk)) ==> inj-event(GSS1IssuesTicket(pjbs,sk)) is true.
+
+[ PASTE ACTUAL ProVerif OUTPUT BELOW THIS LINE ]

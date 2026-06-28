@@ -1,0 +1,291 @@
+(* ============================================================
+   B-PUF A2K: Anonymous Authentication and Key Agreement Protocol
+                with Session-Preserving Cross-Domain Handover
+   Formal symbolic verification in the applied pi-calculus
+
+   Tool:        ProVerif 2.05+
+   Author:      Hyunseok Kim, Korea Military Academy
+                Sungdo Kim, Changwon National University
+   Version:     final-2 (2026-06-30)  [revised per JISA reviewers]
+
+   Verification goals (matching Section 5.1 of the manuscript):
+     Q1. Secrecy of the session key SK against the Dolev-Yao attacker
+         under physical UAV capture (extraction of non-PUF memory only).
+     Q2. User <-> GSS injective authentication (correspondence).
+     Q3. GSS <-> UAV injective authentication (correspondence).
+     Q4. Handover integrity: GSS2 accepts a handover only if a matching
+         AEAD ticket was genuinely issued by GSS1 for the same routing
+         context and session key.
+
+   Revisions incorporated in this version (vs. the initial submission):
+     * R1-1 : the operator verifier V_U and the first message M1 now
+              explicitly include and bind the TARGET UAV pseudo-identity
+              PID_j, so the GSS authenticates the intended UAV.
+     * R1-4 : the handover ticket is now an AUTHENTICATED-ENCRYPTION
+              (AEAD) construction under K12 binding
+              PID_i | PID_j | ID_GSS1 | ID_GSS2 | SID | ver | Lh | Nt,
+              with a verifiable tag (adec_auth) that fails on any forged
+              or modified ticket -- modelling AES-GCM integrity.  The
+              ticket is sent on the PUBLIC inter-GSS channel so the
+              attacker may attempt forgery/replay; Q4 shows it cannot.
+     * The pseudo-identity refresh PID^new = H2(PID|SK) is included in
+              M4/M5, matching the manuscript.
+
+   Design notes (retained from the original model):
+     - Distinct hash symbols H1..H5 are independent random oracles.
+     - The PUF is a private function symbol (unclonability).
+     - The Fuzzy Extractor reproduction property is an equational reduction.
+     - XOR is an abstract pair-constructor with a single destructor,
+       avoiding algebraic-theory complications.
+     - The secrecy probe SK_secret_test is sealed under SK by the GSS,
+       making Q1 non-trivial.
+
+   Run:
+     proverif -in pi b_puf_a2k.pv
+
+   Expected output:
+     RESULT not attacker(SK_secret_test[]) is true.
+     RESULT inj-event(GSSAcceptsUser(...)) ==> inj-event(UserStarts(...)) is true.
+     RESULT inj-event(UAVAccepts(...))     ==> inj-event(GSSChallenges(...)) is true.
+     RESULT inj-event(GSS2AcceptsHandover(...)) ==> inj-event(GSS1IssuesTicket(...)) is true.
+   ============================================================ *)
+
+(* ---------- Channels ---------- *)
+free c_pub : channel.                    (* Open wireless (Dolev-Yao)            *)
+free c_gss : channel.                    (* Inter-GSS backhaul (public: the      *)
+                                         (* attacker may try to forge/replay     *)
+                                         (* tickets; AEAD integrity defeats it). *)
+
+(* ---------- Types ---------- *)
+type host.
+type nonce.
+type pid.
+type puf_resp.
+type bio.
+type bio_key.
+type symkey.
+
+(* ---------- Type converters (injective public constructors) ---------- *)
+fun pid2bs(pid)         : bitstring  [data].
+fun nonce2bs(nonce)     : bitstring  [data].
+fun resp2bs(puf_resp)   : bitstring  [data].
+fun biokey2bs(bio_key)  : bitstring  [data].
+fun symkey2bs(symkey)   : bitstring  [data].
+fun host2bs(host)       : bitstring  [data].
+fun bs2symkey(bitstring): symkey     [data].
+
+(* ---------- Hash functions (independent random oracles) ---------- *)
+fun H1(bitstring) : bitstring.
+fun H2(bitstring, bitstring) : bitstring.
+fun H3(bitstring, bitstring, bitstring) : bitstring.
+fun H4(bitstring, bitstring, bitstring, bitstring) : bitstring.
+fun H5(bitstring, bitstring, bitstring, bitstring, bitstring) : bitstring.
+
+(* V_U binds five fields (S_i | PID_i | PID_j | N_U | T_1): dedicated symbol *)
+fun HVU(bitstring, bitstring, bitstring, bitstring, bitstring) : bitstring.
+
+(* ---------- Symmetric encryption (IND-CPA) for M4/M5 ---------- *)
+fun senc(bitstring, symkey) : bitstring.
+reduc forall m:bitstring, k:symkey ; sdec(senc(m,k), k) = m.
+
+(* ---------- Authenticated encryption (AES-GCM) for the handover ticket ----------
+   adec_auth opens a ciphertext ONLY if it was produced by aenc under the
+   same key; a forged/modified ticket has no valid pre-image and cannot be
+   opened, modelling AEAD tag verification.                                  *)
+fun aenc(bitstring, symkey) : bitstring.
+reduc forall m:bitstring, k:symkey ; adec_auth(aenc(m,k), k) = m.
+
+(* ---------- PUF (private/unclonable) ---------- *)
+fun PUF(host, bitstring) : puf_resp [private].
+
+(* ---------- Fuzzy Extractor ---------- *)
+fun FE_Gen_K(bio)            : bio_key    [private].
+fun FE_Gen_HD(bio)           : bitstring.
+fun FE_Rep(bio, bitstring)   : bio_key.
+reduc forall b:bio ; FE_Rep(b, FE_Gen_HD(b)) = FE_Gen_K(b).
+
+(* ---------- XOR (abstract; single destructor avoids algebraic theory) ---------- *)
+fun bxor(bitstring, bitstring) : bitstring.
+reduc forall x:bitstring, y:bitstring ; bxor_inv(bxor(x,y), y) = x.
+
+(* ---------- Long-term secrets ---------- *)
+free K_TA : bitstring [private].
+free K12  : symkey    [private].
+
+(* ---------- Secrecy probe: free private value sealed under SK by GSS;
+              if attacker recovers it, SK secrecy is broken ---------- *)
+free SK_secret_test : bitstring [private].
+
+(* ---------- Public GSS identifiers (bound inside the ticket) ---------- *)
+free ID_GSS1 : host.
+free ID_GSS2 : host.
+
+(* ---------- Events for correspondence assertions ---------- *)
+event UserStarts(pid, nonce).
+event GSSAcceptsUser(pid, nonce, bitstring).
+event GSSChallenges(pid, nonce).
+event UAVAccepts(pid, nonce, bitstring).
+event GSS1IssuesTicket(bitstring, bitstring).
+event GSS2AcceptsHandover(bitstring, bitstring).
+
+(* ---------- Security queries ---------- *)
+(* Q1: Secrecy of session key against Dolev-Yao adversary *)
+query attacker(SK_secret_test).
+
+(* Q2: User <-> GSS injective authentication *)
+query u:pid, n:nonce, sk:bitstring ;
+  inj-event(GSSAcceptsUser(u, n, sk)) ==> inj-event(UserStarts(u, n)).
+
+(* Q3: GSS <-> UAV injective authentication *)
+query d:pid, n:nonce, sk:bitstring ;
+  inj-event(UAVAccepts(d, n, sk)) ==> inj-event(GSSChallenges(d, n)).
+
+(* Q4: Handover-ticket integrity correspondence *)
+query pjbs:bitstring, sk:bitstring ;
+  inj-event(GSS2AcceptsHandover(pjbs, sk)) ==>
+    inj-event(GSS1IssuesTicket(pjbs, sk)).
+
+(* ============================================================
+   PROCESSES
+   ============================================================ *)
+
+(* ---------- User process ----------
+   Recovers S_i' via biometric Fuzzy Extractor, then binds the TARGET
+   UAV PID_j inside V_U and M1 (R1-1).                                   *)
+let UserProcess(PIDi:pid, PIDj:pid, Bi:bitstring, HDbio:bitstring,
+                Bioi_in:bio) =
+  let Kbio_prime = FE_Rep(Bioi_in, HDbio) in
+  let Si_prime   = bxor_inv(Bi, H1(biokey2bs(Kbio_prime))) in
+  new NU:nonce;
+  new T1:bitstring;
+  (* V_U = h(S_i' | PID_i | PID_j | N_U | T1) : target UAV bound *)
+  let VU = HVU(Si_prime, pid2bs(PIDi), pid2bs(PIDj), nonce2bs(NU), T1) in
+  event UserStarts(PIDi, NU);
+  (* M1 = { PID_i, PID_j, N_U, T1, V_U } *)
+  out(c_pub, (PIDi, PIDj, NU, T1, VU));
+
+  in(c_pub, (M4_enc:bitstring, M4_mac:bitstring, T4:bitstring));
+  let KGU = bs2symkey(H2(Si_prime, nonce2bs(NU))) in
+  let M4_dec = sdec(M4_enc, KGU) in
+  0.
+
+(* ---------- GSS process: Phase 2 + handover initiation ----------
+   Verifies V_U (incl. PID_j), performs the ACL check on the
+   AUTHENTICATED PID_j (abstracted), then runs the 3-party AKE and issues
+   an AEAD handover ticket (R1-4).                                       *)
+let GSSProcess1(PIDi:pid, Si:bitstring, PIDj:pid, Cj:bitstring,
+                Rj_stored:puf_resp) =
+  in(c_pub, (=PIDi, =PIDj, NU:nonce, T1:bitstring, VU:bitstring));
+  (* verify operator verifier, including the target-UAV binding *)
+  let VU_check = HVU(Si, pid2bs(PIDi), pid2bs(PIDj), nonce2bs(NU), T1) in
+  if VU_check = VU then
+  new N1:nonce;
+  new T2:bitstring;
+  event GSSChallenges(PIDj, N1);
+  out(c_pub, (Cj, N1, T2));
+
+  in(c_pub, (V1:bitstring, N2:nonce, T3:bitstring));
+  let V1_check = H4(resp2bs(Rj_stored), nonce2bs(N1),
+                    nonce2bs(N2), T3) in
+  if V1_check = V1 then
+
+  let SK = H5(Si, resp2bs(Rj_stored),
+              nonce2bs(NU), nonce2bs(N1), nonce2bs(N2)) in
+  event GSSAcceptsUser(PIDi, NU, SK);
+
+  (* pseudo-identity refresh *)
+  let PIDinew = H2(pid2bs(PIDi), SK) in
+  let PIDjnew = H2(pid2bs(PIDj), SK) in
+
+  let KGU = bs2symkey(H2(Si, nonce2bs(NU))) in
+  let KGD = bs2symkey(H3(resp2bs(Rj_stored),
+                          nonce2bs(N1), nonce2bs(N2))) in
+  new T4:bitstring;
+  (* M4 = { E_{KGU}(SK|N1|N2|PIDinew), h(SK|KGU), T4 } *)
+  let M4 = senc((SK, N1, N2, PIDinew), KGU) in
+  out(c_pub, (M4, H2(SK, symkey2bs(KGU)), T4));
+  (* M5 = { E_{KGD}(SK|NU|PIDjnew), h(SK|KGD), T4 } *)
+  let M5 = senc((SK, NU, PIDjnew), KGD) in
+  out(c_pub, (M5, H2(SK, symkey2bs(KGD)), T4));
+
+  (* Embed the secrecy probe under the session key. *)
+  let SK_key = bs2symkey(SK) in
+  out(c_pub, senc(SK_secret_test, SK_key));
+
+  (* ---- Issue AEAD handover ticket (Phase 3, R1-4) ----
+     Ticket = AEAD_{K12}( PIDinew|PIDjnew|ID_GSS1|ID_GSS2|SID|ver|Lh|Nt ; SK )
+     SK is carried as the AEAD payload and travels on the PUBLIC c_gss.
+     Because K12 is private, the attacker cannot open the ticket, so SK
+     secrecy (Q1) is preserved even though the ciphertext is observable. *)
+  new SID:bitstring;
+  new veri:bitstring;
+  new Lh:bitstring;
+  new Nt:bitstring;
+  let Ticket = aenc((pid2bs(PIDinew), pid2bs(PIDjnew),
+                     host2bs(ID_GSS1), host2bs(ID_GSS2),
+                     SID, veri, Lh, Nt, SK), K12) in
+  (* the routing context bound in the integrity event *)
+  let pjbs = (pid2bs(PIDjnew), host2bs(ID_GSS2), SID) in
+  event GSS1IssuesTicket(pjbs, SK);
+  out(c_gss, Ticket).
+
+(* ---------- UAV process ---------- *)
+let UAVProcess(IDj:host, PIDj:pid, Cj_param:bitstring) =
+  in(c_pub, (=Cj_param, N1:nonce, T2:bitstring));
+  let Rj = PUF(IDj, Cj_param) in
+  new N2:nonce;
+  new T3:bitstring;
+  let V1 = H4(resp2bs(Rj), nonce2bs(N1), nonce2bs(N2), T3) in
+  out(c_pub, (V1, N2, T3));
+
+  in(c_pub, (M5_enc:bitstring, M5_mac:bitstring, T4:bitstring));
+  let KGD = bs2symkey(H3(resp2bs(Rj),
+                          nonce2bs(N1), nonce2bs(N2))) in
+  let (SK_recv:bitstring, NU_recv:nonce, PIDjnew_recv:bitstring) =
+      sdec(M5_enc, KGD) in
+  event UAVAccepts(PIDj, N1, SK_recv).
+
+(* ---------- GSS2 handover receiver ----------
+   Accepts only a ticket that AEAD-decrypts+verifies under K12 and is
+   addressed to THIS server (ID_GSS2).                                   *)
+let GSS2HandoverReceiver() =
+  in(c_gss, T_in:bitstring);
+  let (PIDi_bs:bitstring, PIDj_bs:bitstring,
+       g1:bitstring, g2:bitstring,
+       SID_in:bitstring, ver_in:bitstring,
+       Lh_in:bitstring, Nt_in:bitstring, SK_in:bitstring) =
+    adec_auth(T_in, K12) in
+  if g2 = host2bs(ID_GSS2) then
+  (
+    let pjbs = (PIDj_bs, g2, SID_in) in
+    event GSS2AcceptsHandover(pjbs, SK_in)
+  ).
+
+(* ============================================================
+   MAIN PROCESS
+   ============================================================ *)
+
+process
+  new IDi:host;
+  new IDj:host;
+  new Bioi:bio;
+  new PIDi:pid;
+  new PIDj:pid;
+  new Si:bitstring;
+  new Cj:bitstring;
+  let Rj    = PUF(IDj, Cj) in
+  let Kbio  = FE_Gen_K(Bioi) in
+  let HDbio = FE_Gen_HD(Bioi) in
+  let Bi    = bxor(Si, H1(biokey2bs(Kbio))) in
+
+  (* Attacker can observe public identifiers and helper data *)
+  out(c_pub, PIDi);
+  out(c_pub, PIDj);
+  out(c_pub, HDbio);
+
+  (
+      ( ! UserProcess(PIDi, PIDj, Bi, HDbio, Bioi) )
+    | ( ! GSSProcess1(PIDi, Si, PIDj, Cj, Rj) )
+    | ( ! UAVProcess(IDj, PIDj, Cj) )
+    | ( ! GSS2HandoverReceiver() )
+  )

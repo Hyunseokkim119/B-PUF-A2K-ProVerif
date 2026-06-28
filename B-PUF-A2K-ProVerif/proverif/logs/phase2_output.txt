@@ -1,0 +1,28 @@
+=======================================================================
+ProVerif output log for phase2*.pv
+=======================================================================
+This file must contain the VERBATIM console output of:
+
+    proverif proverif/phase2_*.pv
+
+Generate it on your machine and paste the full output here, e.g.:
+
+    proverif proverif/phase2_registration.pv  | tee proverif/logs/phase2_output.txt   # phase1
+    proverif proverif/phase2_authentication.pv| tee proverif/logs/phase2_output.txt   # phase2
+    proverif proverif/phase2_handover.pv      | tee proverif/logs/phase2_output.txt   # phase3
+
+The reviewer-relevant lines are the final RESULT lines. For a correct
+model they read (per phase):
+
+  phase1 :  RESULT not attacker(Si[])  is true.
+            RESULT not attacker(K12[]) is true.
+            RESULT not attacker(idU[]) is true.
+
+  phase2 :  RESULT not attacker(SK_secret_test[]) is true.
+            RESULT inj-event(GSSAcceptsUser(...)) ==> inj-event(UserStarts(...)) is true.
+            RESULT inj-event(UAVAccepts(...))    ==> inj-event(GSSChallenges(...)) is true.
+
+  phase3 :  RESULT inj-event(GSS2AcceptsHandover(...)) ==> inj-event(GSS1IssuesTicket(...)) is true.
+            RESULT not attacker(SKtest[]) is true.
+
+[ PASTE ACTUAL ProVerif OUTPUT BELOW THIS LINE ]

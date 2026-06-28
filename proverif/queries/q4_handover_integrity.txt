@@ -1,0 +1,18 @@
+Q4 — Handover-ticket integrity: GSS2 <== GSS1
+=============================================
+Query (in b_puf_a2k.pv):
+
+    query pjbs:bitstring, sk:bitstring ;
+      inj-event(GSS2AcceptsHandover(pjbs, sk)) ==>
+        inj-event(GSS1IssuesTicket(pjbs, sk)).
+
+Meaning: whenever the target GSS accepts a handover, a matching ticket
+issuance by the serving GSS must have occurred, one-to-one. The ticket is
+AEAD-protected under the private K12 (adec_auth opens only a ciphertext
+produced under K12) and is sent on the PUBLIC inter-GSS channel c_gss, so
+the attacker may attempt forgery or replay. Because a forged/modified
+ticket cannot be opened, GSS2 accepts only genuine tickets, and the active
+session key cannot be migrated by an adversary.
+
+Expected:
+  RESULT inj-event(GSS2AcceptsHandover(pjbs,sk)) ==> inj-event(GSS1IssuesTicket(pjbs,sk)) is true.

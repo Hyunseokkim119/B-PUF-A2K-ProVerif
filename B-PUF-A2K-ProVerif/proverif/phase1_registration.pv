@@ -1,0 +1,55 @@
+(* ======================================================================
+   B-PUF A2K : Phase 1 -- Registration (offline, secure channel)
+   Manuscript JISAS-D-26-02544.  Anonymised for peer review.
+   ProVerif >= 2.04.   Run:  proverif phase1_registration.pv
+
+   Phase 1 runs over a SECURE, offline channel (the TA enrols every
+   entity).  This model checks that the secrets provisioned at
+   registration -- the operator secret Si, the inter-GSS key K12, and the
+   PUF response Rj -- are NOT learnable by a Dolev-Yao attacker who only
+   controls the public network and observes the public registration
+   outputs {B_i, HD_bio, PID_i, C_j, ID_GSS}.
+
+   This file is intentionally small: it documents the trust assumptions
+   that Phases 2 and 3 build on, and confirms the long-term secrets stay
+   secret across the registration step.
+   ====================================================================== *)
+
+free c     : channel.            (* public network                         *)
+free sec   : channel [private].  (* TA <-> entity secure registration link *)
+
+type pid.
+type key.
+
+fun puf(bitstring, bitstring) : bitstring.   (* R_j = PUF(idU, C_j) *)
+fun hbio(bitstring) : bitstring.             (* helper-data / biometric lock *)
+
+(* long-term secrets enrolled by the TA *)
+free Si  : bitstring [private].   (* operator secret           *)
+free K12 : key       [private].   (* inter-GSS key             *)
+free idU : bitstring [private].   (* UAV PUF handle            *)
+
+(* public registration outputs *)
+free Cj   : bitstring.            (* one-time PUF challenge (public) *)
+free PIDi0 : pid.
+free PIDj0 : pid.
+
+(* secrecy goals: the enrolled long-term secrets remain secret *)
+query attacker(Si).
+query attacker(K12).
+query attacker(idU).
+
+(* TA enrols the UAV: stores R_j at the GSS over the SECURE channel.
+   B_i (biometric-locked secret) and helper data are published, but the
+   PUF response and Si are sent only on `sec`.                            *)
+let processTA() =
+    let Rj = puf(idU, Cj) in
+    out(sec, (Si, Rj, K12));       (* provisioned only over the secure link *)
+    out(c, (Cj, PIDi0, PIDj0, hbio(Si))).   (* public outputs only *)
+
+let processEntity() =
+    in(sec, (s : bitstring, r : bitstring, k : key));
+    0.
+
+process
+    ( ( ! processTA() ) | ( ! processEntity() ) )

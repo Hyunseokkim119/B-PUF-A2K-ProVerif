@@ -1,0 +1,99 @@
+(* ======================================================================
+   B-PUF A2K : Phase 2 -- Authentication & Key Agreement (3-party)
+   Manuscript JISAS-D-26-02544.  Anonymised for peer review.
+   ProVerif >= 2.04.   Run:  proverif phase2_authentication.pv
+
+   Verifies (cf. Section 5.1):
+     Q1  secrecy of the session key SK
+     Q2  injective authentication  User <-> GSS
+     Q3  injective authentication  UAV  <-> GSS
+
+   All nonces are public; only Si and the PUF handle idU are private.
+   ====================================================================== *)
+
+free c : channel.
+
+type pid. type nonce. type key.
+
+fun hSK(bitstring, bitstring, nonce, nonce, nonce) : key.
+fun hVU(bitstring, pid, pid, nonce)                : bitstring.
+fun hV1(bitstring, nonce, nonce)                   : bitstring.
+fun hTag(key, key)                                 : bitstring.
+fun hpid(pid, key)                                 : pid.
+fun kdfU(bitstring, nonce)                         : key.
+fun kdfD(bitstring, nonce, nonce)                  : key.
+fun puf(bitstring, bitstring)                      : bitstring.
+
+fun senc(bitstring, key) : bitstring.
+reduc forall m : bitstring, k : key; sdec(senc(m,k), k) = m.
+
+event UserStarts(pid, nonce).
+event GSSAcceptsUser(pid, nonce, key).
+event GSSChallenges(pid, nonce).
+event UAVAccepts(pid, nonce, key).
+
+free SK_secret_test : bitstring [private].
+query attacker(SK_secret_test).
+
+query u : pid, n : nonce, sk : key;
+  inj-event(GSSAcceptsUser(u,n,sk)) ==> inj-event(UserStarts(u,n)).
+
+query d : pid, n : nonce, sk : key;
+  inj-event(UAVAccepts(d,n,sk)) ==> inj-event(GSSChallenges(d,n)).
+
+free Si  : bitstring [private].
+free Cj  : bitstring.
+free idU : bitstring [private].
+free PIDi0 : pid.
+free PIDj0 : pid.
+
+let processUser(PIDi : pid, PIDj : pid) =
+    new NU : nonce; new T1 : nonce;
+    let VU = hVU(Si, PIDi, PIDj, NU) in
+    event UserStarts(PIDi, NU);
+    out(c, (PIDi, PIDj, NU, T1, VU));
+    in(c, (encU : bitstring, tagU : bitstring, T4 : nonce));
+    let KGU = kdfU(Si, NU) in
+    let (skU : key, n1u : nonce, n2u : nonce, pidinew : pid) = sdec(encU, KGU) in
+    if tagU = hTag(skU, KGU) then 0.
+
+let processGSS1(PIDi : pid, PIDj : pid) =
+    in(c, (pidi : pid, pidj : pid, NU : nonce, T1 : nonce, VU : bitstring));
+    if VU = hVU(Si, pidi, pidj, NU) then
+    (
+      new N1 : nonce; new T2 : nonce;
+      event GSSChallenges(pidj, N1);
+      out(c, (Cj, N1, T2));
+      in(c, (V1 : bitstring, N2 : nonce, T3 : nonce));
+      let Rj = puf(idU, Cj) in
+      if V1 = hV1(Rj, N1, N2) then
+      (
+        let SK = hSK(Si, Rj, NU, N1, N2) in
+        event GSSAcceptsUser(pidi, NU, SK);
+        let PIDinew = hpid(pidi, SK) in
+        let PIDjnew = hpid(pidj, SK) in
+        let KGU = kdfU(Si, NU) in
+        let KGD = kdfD(Rj, N1, N2) in
+        out(c, senc(SK_secret_test, SK));
+        new T4 : nonce;
+        out(c, (senc((SK, N1, N2, PIDinew), KGU), hTag(SK, KGU), T4));
+        out(c, (senc((SK, NU, PIDjnew), KGD), hTag(SK, KGD), T4))
+      )
+    ).
+
+let processUAV(PIDj : pid) =
+    in(c, (cj : bitstring, N1 : nonce, T2 : nonce));
+    let Rj = puf(idU, cj) in
+    new N2 : nonce; new T3 : nonce;
+    let V1 = hV1(Rj, N1, N2) in
+    out(c, (V1, N2, T3));
+    in(c, (encD : bitstring, tagD : bitstring, T4 : nonce));
+    let KGD = kdfD(Rj, N1, N2) in
+    let (skD : key, nuD : nonce, pidjnew : pid) = sdec(encD, KGD) in
+    if tagD = hTag(skD, KGD) then
+       event UAVAccepts(PIDj, N1, skD).
+
+process
+    ( ( ! processUser(PIDi0, PIDj0) )
+    | ( ! processGSS1(PIDi0, PIDj0) )
+    | ( ! processUAV(PIDj0) ) )

@@ -1,0 +1,15 @@
+Q1 — Secrecy of the session key SK
+==================================
+Query (in b_puf_a2k.pv):
+
+    free SK_secret_test : bitstring [private].
+    query attacker(SK_secret_test).
+
+Meaning: the GSS seals a fresh private value under SK
+(out(c_pub, senc(SK_secret_test, SK_key))). The attacker wins iff it can
+recover that value, which requires SK = H5(Si | Rj | NU | N1 | N2). Si and
+the PUF response are private and the nonces alone are insufficient, so SK
+cannot be derived. The handover ticket carries SK under AEAD(K12) on the
+public inter-GSS channel, but K12 is private, so this does not leak SK.
+
+Expected:  RESULT not attacker(SK_secret_test[]) is true.
